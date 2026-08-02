@@ -1,0 +1,218 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Verbose Sysmon configuration for a dedicated security-testing and
+  detection-engineering lab host.
+
+  Design:
+    - Collect broad process, network, DNS, file, registry, IPC, WMI,
+      deletion, clipboard, and executable-staging telemetry.
+    - Target ImageLoad and ProcessAccess, the two event classes most likely
+      to produce disproportionate noise when collected without filters.
+    - Do not enable Sysmon's executable/shredding blocking events.
+    - Do not archive every deleted file. Event ID 26 records deletions
+      without filling the protected Sysmon archive directory.
+
+  Before deployment, confirm the schema supported by your installed build:
+      Sysmon64.exe -? config
+-->
+<Sysmon schemaversion="4.90">
+  <!-- All supported hashes: MD5, SHA1, SHA256, and IMPHASH where applicable. -->
+  <HashAlgorithms>*</HashAlgorithms>
+
+  <!-- Keep signature validation and network-event hostname enrichment enabled. -->
+  <CheckRevocation>true</CheckRevocation>
+  <DnsLookup>true</DnsLookup>
+
+  <EventFiltering>
+
+    <!-- Event ID 1: All process creation, including command line, parent, and hashes. -->
+    <RuleGroup name="Process creation - collect all" groupRelation="or">
+      <ProcessCreate onmatch="exclude" />
+    </RuleGroup>
+
+    <!-- Event ID 2: All explicit file creation-time changes / timestomping telemetry. -->
+    <RuleGroup name="File creation time changes - collect all" groupRelation="or">
+      <FileCreateTime onmatch="exclude" />
+    </RuleGroup>
+
+    <!-- Event ID 3: All TCP and UDP connections, including loopback. -->
+    <RuleGroup name="Network connections - collect all" groupRelation="or">
+      <NetworkConnect onmatch="exclude" />
+    </RuleGroup>
+
+    <!-- Event ID 5: All process termination for complete execution timelines. -->
+    <RuleGroup name="Process termination - collect all" groupRelation="or">
+      <ProcessTerminate onmatch="exclude" />
+    </RuleGroup>
+
+    <!-- Event ID 6: All driver loads with hashes and signature metadata. -->
+    <RuleGroup name="Driver loads - collect all" groupRelation="or">
+      <DriverLoad onmatch="exclude" />
+    </RuleGroup>
+
+    <!--
+      Event ID 7: Targeted image/module loads.
+
+      Fully unfiltered Event ID 7 is commonly the highest-volume Sysmon event.
+      This captures:
+        - unsigned or invalidly signed modules;
+        - modules loaded by scripting engines and common LOLBins;
+        - modules loaded into sensitive or frequently abused processes.
+    -->
+    <RuleGroup name="Image loads - unsigned, invalid, LOLBins, and sensitive processes"
+               groupRelation="or">
+      <ImageLoad onmatch="include">
+        <Signed condition="is">false</Signed>
+        <SignatureStatus condition="is not">Valid</SignatureStatus>
+
+        <Image condition="image">powershell.exe</Image>
+        <Image condition="image">pwsh.exe</Image>
+        <Image condition="image">cmd.exe</Image>
+        <Image condition="image">rundll32.exe</Image>
+        <Image condition="image">regsvr32.exe</Image>
+        <Image condition="image">mshta.exe</Image>
+        <Image condition="image">wscript.exe</Image>
+        <Image condition="image">cscript.exe</Image>
+        <Image condition="image">wmic.exe</Image>
+        <Image condition="image">certutil.exe</Image>
+        <Image condition="image">bitsadmin.exe</Image>
+        <Image condition="image">installutil.exe</Image>
+        <Image condition="image">regasm.exe</Image>
+        <Image condition="image">regsvcs.exe</Image>
+        <Image condition="image">msbuild.exe</Image>
+        <Image condition="image">control.exe</Image>
+        <Image condition="image">forfiles.exe</Image>
+        <Image condition="image">hh.exe</Image>
+        <Image condition="image">msiexec.exe</Image>
+        <Image condition="image">odbcconf.exe</Image>
+        <Image condition="image">presentationhost.exe</Image>
+        <Image condition="image">xwizard.exe</Image>
+
+        <Image condition="image">lsass.exe</Image>
+        <Image condition="image">winlogon.exe</Image>
+        <Image condition="image">services.exe</Image>
+        <Image condition="image">svchost.exe</Image>
+        <Image condition="image">explorer.exe</Image>
+        <Image condition="image">spoolsv.exe</Image>
+        <Image condition="image">taskhostw.exe</Image>
+        <Image condition="image">dllhost.exe</Image>
+      </ImageLoad>
+    </RuleGroup>
+
+    <!-- Event ID 8: All cross-process remote-thread creation. -->
+    <RuleGroup name="Remote thread creation - collect all" groupRelation="or">
+      <CreateRemoteThread onmatch="exclude" />
+    </RuleGroup>
+
+    <!-- Event ID 9: All raw disk reads. -->
+    <RuleGroup name="Raw disk access - collect all" groupRelation="or">
+      <RawAccessRead onmatch="exclude" />
+    </RuleGroup>
+
+    <!--
+      Event ID 10: Broad, targeted process-access telemetry.
+
+      Captures access involving sensitive targets, common injection targets,
+      security tooling, and scripting/LOLBins. This is intentionally broader
+      than a production baseline while avoiding every routine process handle.
+    -->
+    <RuleGroup name="Process access - sensitive targets and suspicious sources"
+               groupRelation="or">
+      <ProcessAccess onmatch="include">
+        <TargetImage condition="image">lsass.exe</TargetImage>
+        <TargetImage condition="image">winlogon.exe</TargetImage>
+        <TargetImage condition="image">services.exe</TargetImage>
+        <TargetImage condition="image">csrss.exe</TargetImage>
+        <TargetImage condition="image">smss.exe</TargetImage>
+        <TargetImage condition="image">svchost.exe</TargetImage>
+        <TargetImage condition="image">explorer.exe</TargetImage>
+        <TargetImage condition="image">spoolsv.exe</TargetImage>
+        <TargetImage condition="image">taskhostw.exe</TargetImage>
+        <TargetImage condition="image">dllhost.exe</TargetImage>
+        <TargetImage condition="image">wininit.exe</TargetImage>
+        <TargetImage condition="image">dwm.exe</TargetImage>
+
+        <SourceImage condition="image">powershell.exe</SourceImage>
+        <SourceImage condition="image">pwsh.exe</SourceImage>
+        <SourceImage condition="image">cmd.exe</SourceImage>
+        <SourceImage condition="image">rundll32.exe</SourceImage>
+        <SourceImage condition="image">regsvr32.exe</SourceImage>
+        <SourceImage condition="image">mshta.exe</SourceImage>
+        <SourceImage condition="image">wscript.exe</SourceImage>
+        <SourceImage condition="image">cscript.exe</SourceImage>
+        <SourceImage condition="image">wmic.exe</SourceImage>
+        <SourceImage condition="image">procdump.exe</SourceImage>
+        <SourceImage condition="image">procexp.exe</SourceImage>
+        <SourceImage condition="image">procexp64.exe</SourceImage>
+        <SourceImage condition="image">processhacker.exe</SourceImage>
+        <SourceImage condition="image">processhacker2.exe</SourceImage>
+        <SourceImage condition="image">mimikatz.exe</SourceImage>
+        <SourceImage condition="image">rubeus.exe</SourceImage>
+      </ProcessAccess>
+    </RuleGroup>
+
+    <!-- Event ID 11: All file creations and overwrites. Very verbose by design. -->
+    <RuleGroup name="File creation - collect all" groupRelation="or">
+      <FileCreate onmatch="exclude" />
+    </RuleGroup>
+
+    <!-- Events 12-14: All registry key/value create, set, delete, and rename activity. -->
+    <RuleGroup name="Registry changes - collect all" groupRelation="or">
+      <RegistryEvent onmatch="exclude" />
+    </RuleGroup>
+
+    <!-- Event ID 15: All alternate data stream creation, including Zone.Identifier. -->
+    <RuleGroup name="Alternate data streams - collect all" groupRelation="or">
+      <FileCreateStreamHash onmatch="exclude" />
+    </RuleGroup>
+
+    <!-- Events 17-18: All named-pipe creation and connection activity. -->
+    <RuleGroup name="Named pipes - collect all" groupRelation="or">
+      <PipeEvent onmatch="exclude" />
+    </RuleGroup>
+
+    <!-- Events 19-21: All permanent WMI filter, consumer, and binding activity. -->
+    <RuleGroup name="WMI persistence - collect all" groupRelation="or">
+      <WmiEvent onmatch="exclude" />
+    </RuleGroup>
+
+    <!-- Event ID 22: All DNS queries, successful or unsuccessful. -->
+    <RuleGroup name="DNS queries - collect all" groupRelation="or">
+      <DnsQuery onmatch="exclude" />
+    </RuleGroup>
+
+    <!--
+      Event ID 23 is intentionally omitted.
+      Enabling it broadly copies deleted files into the protected archive and
+      can consume substantial disk space during security tests.
+
+      Event ID 26 below records deletions without archiving the file.
+    -->
+
+    <!-- Event ID 24: All clipboard changes. Review privacy and secret-handling risk. -->
+    <RuleGroup name="Clipboard changes - collect all" groupRelation="or">
+      <ClipboardChange onmatch="exclude" />
+    </RuleGroup>
+
+    <!-- Event ID 25: All process tampering detections. -->
+    <RuleGroup name="Process tampering - collect all" groupRelation="or">
+      <ProcessTampering onmatch="exclude" />
+    </RuleGroup>
+
+    <!-- Event ID 26: All detected file deletions, without copy-on-delete archiving. -->
+    <RuleGroup name="File deletions - collect all without archiving" groupRelation="or">
+      <FileDeleteDetected onmatch="exclude" />
+    </RuleGroup>
+
+    <!--
+      Events 27 and 28 are blocking controls and are intentionally omitted.
+      Detection-engineering telemetry should not unexpectedly change test behavior.
+    -->
+
+    <!-- Event ID 29: All executable files detected during creation. -->
+    <RuleGroup name="Executable file creation - collect all" groupRelation="or">
+      <FileExecutableDetected onmatch="exclude" />
+    </RuleGroup>
+
+  </EventFiltering>
+</Sysmon>
